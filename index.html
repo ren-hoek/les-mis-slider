@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+.links line {
+    stroke: #999;
+    stroke-opacity: 0.6;
+}
+
+.nodes circle {
+    stroke: #fff;
+    stroke-width: 1.5px;
+}
+
+.ticks {
+    font: 10px sans-serif;
+}
+
+.track,
+.track-inset,
+.track-overlay {
+    stroke-linecap: round;
+}
+
+.track {
+    stroke: #000;
+    stroke-opacity: 0.3;
+    stroke-width: 10px;
+}
+
+.track-inset {
+    stroke: #ddd;
+    stroke-width: 8px;
+}
+
+.track-overlay {
+    pointer-events: stroke;
+    stroke-width: 50px;
+    stroke: transparent;
+    cursor: grab;
+}
+
+.handle {
+    fill: #fff;
+    stroke: #000;
+    stroke-opacity: 0.5;
+    stroke-width: 1.25px;
+}
+
+</style>
+
+<svg width="960" height="600"></svg>
+<script src="d3.v4.min.js"></script>
+
+<script>
+
+var svg = d3.select("svg"),
+    margin = {right: 50, left: 50},
+    width = +svg.attr("width") - margin.left - margin.right,
+    height = +svg.attr("height");
+
+var links_g = svg.append("g");
+var nodes_g = svg.append("g");
+
+var color = d3.scaleOrdinal(d3.schemeCategory20);
+
+var simulation = d3.forceSimulation()
+    .force("link", d3.forceLink().id(function(d) { return d.id; }))
+    .force("charge", d3.forceManyBody().distanceMax(100))
+    .force("center", d3.forceCenter(width / 2, height / 2));
+
+// Link scale
+var y = d3.scaleLinear()
+    .domain([1, 20])
+    .range([0, height/2])
+    .clamp(true);
+
+// Node scale
+var yNode = d3.scaleLinear()
+    .domain([0, 77])
+    .range([0, height/2])
+    .clamp(true);
+
+// Link slider
+var slider = svg.append("g")
+    .attr("class", "slider")
+    .attr("transform", "translate(" + width + "," + height / 10 + ")");
+
+// Node slider
+var nodeSlider = svg.append("g")
+    .attr("class", "slider")
+    .attr("transform", "translate(" + margin.left + "," + height / 10 + ")");
+
+d3.json("miserables_2.json", function(error, graph) {
+    if (error) throw error;
+    console.log(graph);
+    
+    // Link slider
+    slider.append("line")
+        .attr("class", "track")
+        .attr("y1", y.range()[0])
+        .attr("y2", y.range()[1])
+        .select(function() { return this.parentNode.appendChild(this.cloneNode(true)); })
+        .attr("class", "track-inset")
+    .select(function() { return this.parentNode.appendChild(this.cloneNode(true)); })
+        .attr("class", "track-overlay")
+        .call(d3.drag()
+            .on("start.interrupt", function() { slider.interrupt(); })
+            .on("start drag", function() { updateLinks(y.invert(d3.event.y)); }));
+
+    slider.insert("g", ".track-overlay")
+        .attr("class", "ticks")
+        .attr("transform", "translate(-18," + 5 + ")")
+    .selectAll("text")
+    .data(y.ticks(10))
+    .enter().append("text")
+        .attr("y", y)
+        .attr("text-anchor", "middle")
+        .text(function(d) { return d; });
+
+    var handle = slider.insert("circle", ".track-overlay")
+        .attr("class", "handle")
+        .attr("r", 9);
+
+    // node slider
+    nodeSlider.append("line")
+        .attr("class", "track")
+        .attr("y1", yNode.range()[0])
+        .attr("y2", yNode.range()[1])
+        .select(function() { return this.parentNode.appendChild(this.cloneNode(true)); })
+        .attr("class", "track-inset")
+    .select(function() { return this.parentNode.appendChild(this.cloneNode(true)); })
+        .attr("class", "track-overlay")
+        .call(d3.drag()
+            .on("start.interrupt", function() { nodeSlider.interrupt(); })
+            .on("start drag", function() { updateNodes(yNode.invert(d3.event.y)); }));
+
+    nodeSlider.insert("g", ".track-overlay")
+        .attr("class", "ticks")
+        .attr("transform", "translate(-18," + 5 + ")")
+    .selectAll("text")
+    .data(yNode.ticks(10))
+    .enter().append("text")
+        .attr("y", yNode)
+        .attr("text-anchor", "middle")
+        .text(function(d) { return d; });
+
+    var nodeHandle = nodeSlider.insert("circle", ".track-overlay")
+        .attr("class", "handle")
+        .attr("r", 9);
+
+    function updateNodes(h) {
+        nodeHandle.attr("cy", yNode(h));
+        console.log(h)
+        var threshold = h;
+        var thresholded_nodes = graph.nodes.filter(
+            function(d){ return (d.id >= threshold);}
+        );
+        
+        node = nodes_g.selectAll("circle")
+            .data(thresholded_nodes)
+
+        node.attr("r", 5)
+        .attr("fill", function(d) { return color(d.group); })
+        
+        node.enter().append("circle")
+        .attr("r", 5)
+        .attr("fill", function(d) { return color(d.group); })
+        .merge(node)
+        .call(d3.drag()
+            .on("start", dragstarted)
+            .on("drag", dragged)
+            .on("end", dragended));
+      	node.append("title")
+            .text(function(d) { return d.name; });
+
+        node.exit().remove();
+        
+        simulation
+            .nodes(thresholded_nodes)
+            .on("tick", ticked);
+
+        updateLinks(handle.attr('cy'))
+        simulation.alphaTarget(0.3).restart();
+    }
+
+
+    function updateLinks(h) {
+        handle.attr("cy", y(h));
+        var node_threshold = yNode.invert(nodeHandle.attr('cy'));
+        var threshold = h;
+        var thresholded_links = graph.links.filter(
+            function(d){ 
+                return (
+                    d.value >= threshold 
+                    & d.source['id'] >= node_threshold 
+                    & d.target['id'] >= node_threshold
+                );
+            }
+        );
+        
+        link = links_g.selectAll("line")
+            .data(thresholded_links)
+
+        link
+            .attr("stroke-width", function(d) { return Math.sqrt(d.value); });
+        
+        link.enter().append("line")
+            .attr("stroke-width", function(d) { return Math.sqrt(d.value); });
+
+        link.exit().remove();
+
+	    simulation.force("link").links(thresholded_links);
+        simulation.alphaTarget(0.3).restart();
+    }
+
+    var link = links_g
+        .attr("class", "links")
+    .selectAll("line")
+    .data(graph.links)
+    .enter().append("line")
+        .attr("stroke-width", function(d) { return Math.sqrt(d.value); });
+      
+    var node = nodes_g
+        .attr("class", "nodes")
+    .selectAll("circle")
+    .data(graph.nodes)
+    .enter().append("circle")
+        .attr("r", 5)
+        .attr("fill", function(d) { return color(d.group); })
+        .call(d3.drag()
+            .on("start", dragstarted)
+            .on("drag", dragged)
+            .on("end", dragended));
+  
+	node.append("title")
+        .text(function(d) { return d.name; });
+
+    simulation
+        .nodes(graph.nodes)
+        .on("tick", ticked);
+  
+	simulation.force("link")
+        .links(graph.links);
+	
+    function ticked() {
+        
+        link
+            .attr("x1", function(d) { return d.source.x; })
+            .attr("y1", function(d) { return d.source.y; })
+            .attr("x2", function(d) { return d.target.x; })
+            .attr("y2", function(d) { return d.target.y; });
+            
+        node
+            .attr("cx", function(d) { return d.x; })
+            .attr("cy", function(d) { return d.y; });
+		
+    }
+});
+
+function dragstarted(d) {
+    if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x;
+    d.fy = d.y;
+}
+
+function dragged(d) {
+    d.fx = d3.event.x;
+    d.fy = d3.event.y;
+}
+
+function dragended(d) {
+    if (!d3.event.active) simulation.alphaTarget(0);
+    d.fx = null;
+    d.fy = null;
+}
+
+</script>
+

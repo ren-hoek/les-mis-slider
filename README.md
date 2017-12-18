@@ -12,5 +12,5 @@ https://bl.ocks.org/bricof/7364e456e61eff137d4c6cd435356e04
 Sliders are based on:
 https://bl.ocks.org/mbostock/6499018
 
-Guide to the general update pattern
+Guide to the general update pattern:
 https://bl.ocks.org/mbostock/3808218
